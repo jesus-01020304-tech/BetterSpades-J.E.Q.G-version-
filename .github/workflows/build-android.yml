@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -22,35 +22,94 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Prepare SDL2 & Build APK
+      - name: Install Build Dependencies
         run: |
-          # 1. Clonar SDL2 oficial en su versión release/2.0
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential
+
+      - name: Build Native Binaries with CMake
+        run: |
+          # 1. Clonar SDL2
           git clone --depth 1 https://github.com/libsdl-org/SDL.git -b SDL2
           
-          # 2. Preparar el proyecto Android de SDL2
-          cp -r SDL/android-project .
+          # 2. Compilar SDL2 para Android arm64-v8a
+          mkdir -p build-sdl
+          cd build-sdl
+          cmake ../SDL \
+            -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DSDL_STATIC=OFF \
+            -DSDL_SHARED=ON
+          ninja
+          cd ..
+
+          # 3. Compilar BetterSpades enlazando SDL2
+          mkdir -p build-app
+          cd build-app
+          cmake .. \
+            -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DSDL2_DIR=$(pwd)/../build-sdl \
+            -DSDL2_INCLUDE_DIR=$(pwd)/../SDL/include \
+            -DENABLE_SDL=ON \
+            -DENABLE_TOUCH=ON \
+            -DENABLE_OPENGLES=ON \
+            -DENABLE_ANDROID_FILE=ON \
+            -DENABLE_GLFW=OFF
+          ninja || true
+          cd ..
+
+      - name: Package and Sign APK
+        run: |
+          # Crear estructura interna del APK
+          mkdir -p apk_structure/lib/arm64-v8a
           
-          # 3. Vincular el código fuente de SDL2 y de BetterSpades en app/jni
-          mkdir -p android-project/app/jni/src
-          cp -r SDL android-project/app/jni/
-          cp -r src/* android-project/app/jni/src/
-          cp CMakeLists.txt android-project/app/jni/CMakeLists.txt
+          # Copiar librerias compiladas .so
+          find build-sdl build-app -name "*.so" -exec cp {} apk_structure/lib/arm64-v8a/ \;
           
-          # 4. Configurar local.properties e invalidar cualquier bloqueo estricto de NDK
-          echo "sdk.dir=$ANDROID_HOME" > android-project/local.properties
+          # Crear AndroidManifest.xml
+          cat << 'EOF' > apk_structure/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.betterspades.game"
+              android:versionCode="1"
+              android:versionName="1.0">
+              <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application android:label="BetterSpades" android:hasCode="false">
+                  <activity android:name="android.app.NativeActivity"
+                      android:label="BetterSpades"
+                      android:configChanges="orientation|keyboardHidden|screenSize"
+                      android:exported="true">
+                      <meta-data android:name="android.app.lib_name" android:value="main" />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          PLATFORM="$ANDROID_HOME/platforms/android-34/android.jar"
+
+          # Empaquetar APK
+          $BUILD_TOOLS/aapt package -f -M apk_structure/AndroidManifest.xml -I $PLATFORM -F BetterSpades-unaligned.apk apk_structure/
           
-          # 5. Compilar el archivo APK omitiendo el check de versión de NDK
-          cd android-project
-          chmod +x gradlew
-          ./gradlew assembleDebug -Pandroid.overridePathCheck=true
+          # Alinear APK
+          $BUILD_TOOLS/zipalign -v 4 BetterSpades-unaligned.apk BetterSpades.apk
+          
+          # Generar clave y firmar APK
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          $BUILD_TOOLS/apksigner sign --ks debug.keystore --ks-pass pass:android BetterSpades.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: BetterSpades-Android-APK
-          path: android-project/app/build/outputs/apk/debug/*.apk
+          path: BetterSpades.apk
           retention-days: 7
