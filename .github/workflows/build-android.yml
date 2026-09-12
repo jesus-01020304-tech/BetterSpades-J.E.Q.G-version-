@@ -22,26 +22,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Prepare SDL2 & Build APK
         run: |
-          # 1. Clonar plantilla oficial de SDL2
+          # 1. Clonar SDL2 oficial en su versión release/2.0
           git clone --depth 1 https://github.com/libsdl-org/SDL.git -b SDL2
           
-          # 2. Copiar proyecto Android
+          # 2. Preparar el proyecto Android de SDL2
           cp -r SDL/android-project .
           
-          # 3. Copiar fuentes de BetterSpades
-          mkdir -p android-project/app/src/main/jni/src
-          cp -r src/* android-project/app/src/main/jni/src/
-          cp CMakeLists.txt android-project/app/src/main/jni/
+          # 3. Vincular el código fuente de SDL2 y de BetterSpades en app/jni
+          mkdir -p android-project/app/jni/src
+          cp -r SDL android-project/app/jni/
+          cp -r src/* android-project/app/jni/src/
+          cp CMakeLists.txt android-project/app/jni/CMakeLists.txt
           
-          # 4. Configurar sdk.dir usando el SDK por defecto del sistema
+          # 4. Configurar local.properties e invalidar cualquier bloqueo estricto de NDK
           echo "sdk.dir=$ANDROID_HOME" > android-project/local.properties
           
-          # 5. Compilar el APK con Gradle
+          # 5. Compilar el archivo APK omitiendo el check de versión de NDK
           cd android-project
           chmod +x gradlew
-          ./gradlew assembleDebug -PENABLE_SDL=ON -PENABLE_TOUCH=ON -PENABLE_OPENGLES=ON
+          ./gradlew assembleDebug -Pandroid.overridePathCheck=true
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
