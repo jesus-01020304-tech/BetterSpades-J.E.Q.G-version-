@@ -2,7 +2,8 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "standalone" ]
+    branches:
+      - standalone
   workflow_dispatch:
 
 jobs:
@@ -10,30 +11,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Java JDK
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
-      - name: Build Debug APK with Gradle
+      - name: Set up Android SDK & NDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: '26.1.10909125'
+          cmake-version: '3.22.1'
+
+      - name: Build C Engine with CMake
         run: |
-          if [ -d "android-project" ]; then
-            cd android-project
-          elif [ -d "android" ]; then
-            cd android
-          fi
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          mkdir -p build-android
+          cd build-android
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-34 \
+            -DENABLE_SDL=ON \
+            -DENABLE_TOUCH=ON \
+            -DENABLE_OPENGLES=ON \
+            -DENABLE_ANDROID_FILE=ON \
+            -DENABLE_GLFW=OFF
+          make -j$(nproc)
 
-      - name: Upload APK Artifact
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BetterSpades-Android
-          path: '**/build/outputs/apk/debug/*.apk'
+          name: BetterSpades-Android-Binaries
+          path: build-android/
+          retention-days: 7
           
