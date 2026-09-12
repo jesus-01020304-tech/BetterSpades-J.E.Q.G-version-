@@ -21,12 +21,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK & NDK
-        uses: actions/setup-android@v3
-
-      - name: Build Debug APK
+      - name: Build Debug APK with Gradle
         run: |
-          cd android-project
+          if [ -d "android-project" ]; then
+            cd android-project
+          elif [ -d "android" ]; then
+            cd android
+          fi
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -34,4 +35,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BetterSpades-Android
-          path: android-project/app/build/outputs/apk/debug/*.apk
+          path: '**/build/outputs/apk/debug/*.apk'
+          
