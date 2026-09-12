@@ -22,28 +22,21 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK & NDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          ndk-version: '26.1.10909125'
-
       - name: Prepare SDL2 & Build APK
         run: |
-          # 1. Clonar SDL2 oficial para tener las librerías nativas de Android
+          # 1. Clonar plantilla oficial de SDL2
           git clone --depth 1 https://github.com/libsdl-org/SDL.git -b SDL2
           
-          # 2. Copiar la estructura oficial de proyecto Android de SDL2
+          # 2. Copiar proyecto Android
           cp -r SDL/android-project .
           
-          # 3. Copiar el código de BetterSpades dentro de la estructura de compilación
+          # 3. Copiar fuentes de BetterSpades
           mkdir -p android-project/app/src/main/jni/src
           cp -r src/* android-project/app/src/main/jni/src/
           cp CMakeLists.txt android-project/app/src/main/jni/
           
-          # 4. Configurar variables de entorno para SDK/NDK
+          # 4. Configurar sdk.dir usando el SDK por defecto del sistema
           echo "sdk.dir=$ANDROID_HOME" > android-project/local.properties
-          echo "ndk.dir=$ANDROID_NDK_HOME" >> android-project/local.properties
           
           # 5. Compilar el APK con Gradle
           cd android-project
