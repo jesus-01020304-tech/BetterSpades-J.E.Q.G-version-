@@ -29,8 +29,9 @@ jobs:
 
       - name: Build Native Binaries with CMake
         run: |
-          # 1. Clonar SDL2
+          # 1. Clonar SDL2 y OpenAL-Soft
           git clone --depth 1 https://github.com/libsdl-org/SDL.git -b SDL2
+          git clone --depth 1 https://github.com/kcat/openal-soft.git
           
           # 2. Compilar SDL2 para Android arm64-v8a
           mkdir -p build-sdl
@@ -45,7 +46,21 @@ jobs:
           ninja
           cd ..
 
-          # 3. Compilar BetterSpades enlazando SDL2
+          # 3. Compilar OpenAL-Soft para Android arm64-v8a
+          mkdir -p build-openal
+          cd build-openal
+          cmake ../openal-soft \
+            -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_EXAMPLES=OFF \
+            -DALSOFT_TESTS=OFF
+          ninja
+          cd ..
+
+          # 4. Compilar BetterSpades enlazando SDL2 y OpenAL
           mkdir -p build-app
           cd build-app
           cmake .. \
@@ -55,6 +70,8 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DSDL2_DIR=$(pwd)/../build-sdl \
             -DSDL2_INCLUDE_DIR=$(pwd)/../SDL/include \
+            -DOPENAL_INCLUDE_DIR=$(pwd)/../openal-soft/include \
+            -DOPENAL_LIBRARY=$(pwd)/../build-openal/libopenal.so \
             -DENABLE_SDL=ON \
             -DENABLE_TOUCH=ON \
             -DENABLE_OPENGLES=ON \
@@ -65,13 +82,12 @@ jobs:
 
       - name: Package and Sign APK
         run: |
-          # Crear estructura interna del APK
           mkdir -p apk_structure/lib/arm64-v8a
           
-          # Copiar librerias compiladas .so
-          find build-sdl build-app -name "*.so" -exec cp {} apk_structure/lib/arm64-v8a/ \;
+          # Copiar librerias compiladas .so (SDL2, OpenAL y BetterSpades)
+          find build-sdl build-openal build-app -name "*.so" -exec cp {} apk_structure/lib/arm64-v8a/ \;
           
-          # Crear AndroidManifest.xml
+          # Crear AndroidManifest.xml con permisos de audio
           cat << 'EOF' > apk_structure/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.betterspades.game"
@@ -79,6 +95,7 @@ jobs:
               android:versionName="1.0">
               <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <application android:label="BetterSpades" android:hasCode="false">
                   <activity android:name="android.app.NativeActivity"
                       android:label="BetterSpades"
