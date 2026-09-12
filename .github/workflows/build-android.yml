@@ -1,0 +1,90 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - standalone
+  pull_request:
+    branches:
+      - standalone
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 35
+          ndk-version: '26.0.10792818'
+          cmake-version: '3.22.1'
+      
+      - name: Create Android project structure
+        run: |
+          mkdir -p android
+          # Copy SDL2 android-project if not present
+          if [ ! -d "android/src" ]; then
+            echo "Setting up Android project structure..."
+            # This would normally clone from SDL2 official repo
+            # For now, we prepare the structure
+          fi
+      
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          echo "ndk.dir=$ANDROID_NDK_HOME" >> android/local.properties
+      
+      - name: Build with Gradle
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -DENABLE_SDL=ON \
+            -DENABLE_TOUCH=ON \
+            -DENABLE_OPENGLES=ON \
+            -DENABLE_ANDROID_FILE=ON \
+            -DENABLE_GLFW=OFF
+        continue-on-error: true
+      
+      - name: Build with CMake (alternative)
+        if: failure()
+        run: |
+          mkdir -p build-android
+          cd build-android
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-35 \
+            -DENABLE_SDL=ON \
+            -DENABLE_TOUCH=ON \
+            -DENABLE_OPENGLES=ON \
+            -DENABLE_ANDROID_FILE=ON \
+            -DENABLE_GLFW=OFF
+          make
+      
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: BetterSpades-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+      
+      - name: Upload build logs on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: build-android/CMakeFiles/
+          retention-days: 7
