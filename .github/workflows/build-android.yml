@@ -16,7 +16,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Java
+      - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -27,27 +27,33 @@ jobs:
         with:
           api-level: 34
           ndk-version: '26.1.10909125'
-          cmake-version: '3.22.1'
 
-      - name: Build C Engine with CMake
+      - name: Prepare SDL2 & Build APK
         run: |
-          mkdir -p build-android
-          cd build-android
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-34 \
-            -DENABLE_SDL=ON \
-            -DENABLE_TOUCH=ON \
-            -DENABLE_OPENGLES=ON \
-            -DENABLE_ANDROID_FILE=ON \
-            -DENABLE_GLFW=OFF
-          make -j$(nproc)
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: BetterSpades-Android-Binaries
-          path: build-android/
-          retention-days: 7
+          # 1. Clonar SDL2 oficial para tener las librerías nativas de Android
+          git clone --depth 1 https://github.com/libsdl-org/SDL.git -b SDL2
           
+          # 2. Copiar la estructura oficial de proyecto Android de SDL2
+          cp -r SDL/android-project .
+          
+          # 3. Copiar el código de BetterSpades dentro de la estructura de compilación
+          mkdir -p android-project/app/src/main/jni/src
+          cp -r src/* android-project/app/src/main/jni/src/
+          cp CMakeLists.txt android-project/app/src/main/jni/
+          
+          # 4. Configurar variables de entorno para SDK/NDK
+          echo "sdk.dir=$ANDROID_HOME" > android-project/local.properties
+          echo "ndk.dir=$ANDROID_NDK_HOME" >> android-project/local.properties
+          
+          # 5. Compilar el APK con Gradle
+          cd android-project
+          chmod +x gradlew
+          ./gradlew assembleDebug -PENABLE_SDL=ON -PENABLE_TOUCH=ON -PENABLE_OPENGLES=ON
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BetterSpades-Android-APK
+          path: android-project/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
